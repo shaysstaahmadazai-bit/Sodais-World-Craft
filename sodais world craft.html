@@ -1,0 +1,286 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sodais World Craft</title>
+<script src="https://cdn.babylonjs.com/babylon.js"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;overflow:hidden;font-family:Arial;background:#78b9ef;color:white}
+#game{width:100vw;height:100vh;display:block;touch-action:none}
+#brand{position:absolute;top:12px;left:14px;font-size:23px;
+font-weight:bold;text-shadow:2px 2px #263238;pointer-events:none}
+#help{position:absolute;top:55px;left:14px;background:#0008;
+padding:10px;border-radius:8px;line-height:1.6;pointer-events:none}
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+font-size:25px;text-shadow:1px 1px black;pointer-events:none}
+#hotbar{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);
+display:flex;gap:5px;max-width:98vw}
+.slot{width:66px;height:65px;background:#222b;border:3px solid #aaa;
+border-radius:7px;text-align:center;padding:5px 2px;font-size:11px}
+.slot.active{border-color:#fff;background:#777c;transform:translateY(-5px)}
+.swatch{width:25px;height:25px;margin:0 auto 4px;border:2px solid #ffffff55}
+#menu{position:absolute;inset:0;background:#0009;display:flex;
+align-items:center;justify-content:center;text-align:center}
+.panel{background:#263238f5;border:3px solid #91c7ee;border-radius:15px;
+padding:28px;max-width:420px;width:90%}
+button{padding:12px 18px;margin:5px;border:0;border-radius:7px;
+background:#58b957;color:white;font-size:16px;font-weight:bold;cursor:pointer}
+#notice{position:absolute;top:14px;right:14px;background:#0008;
+padding:9px;border-radius:7px}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div id="brand">SODAIS WORLD CRAFT</div>
+<div id="help">
+<b>CONTROLS</b><br>
+W A S D — Move<br>
+Mouse — Look around<br>
+Space — Jump<br>
+Left click — Mine blocks<br>
+Right click — Place blocks<br>
+1–7 — Select blocks<br>
+Esc — Pause mouse control
+</div>
+<div id="cross">+</div>
+<div id="notice">Blocks: <span id="count">0</span></div>
+<div id="hotbar"></div>
+<div id="menu">
+<div class="panel">
+<h1>SODAIS WORLD CRAFT</h1>
+<p>Build your own block world!</p>
+<p>Explore, mine, jump and create.</p>
+<button id="start">PLAY WORLD</button>
+<button id="save">SAVE WORLD</button>
+<button id="load">LOAD WORLD</button>
+<p id="msg">Your adventure begins here.</p>
+</div>
+</div>
+<script>
+(() => {
+const canvas=document.getElementById("game");
+const engine=new BABYLON.Engine(canvas,true);
+const scene=new BABYLON.Scene(engine);
+scene.clearColor=new BABYLON.Color4(.53,.77,.97,1);
+scene.collisionsEnabled=true;
+scene.gravity=new BABYLON.Vector3(0,-.3,0);
+
+const camera=new BABYLON.UniversalCamera(
+"player",new BABYLON.Vector3(0,4,-5),scene);
+camera.setTarget(new BABYLON.Vector3(0,1,0));
+camera.attachControl(canvas,true);
+camera.speed=.24;
+camera.angularSensibility=3000;
+camera.inertia=.1;
+camera.minZ=.1;
+camera.applyGravity=true;
+camera.ellipsoid=new BABYLON.Vector3(.35,.9,.35);
+camera.checkCollisions=true;
+camera.keysUp=[87,38];
+camera.keysDown=[83,40];
+camera.keysLeft=[65,37];
+camera.keysRight=[68,39];
+
+const light=new BABYLON.HemisphericLight(
+"sun",new BABYLON.Vector3(0,1,0),scene);
+light.intensity=.9;
+const sun=new BABYLON.DirectionalLight(
+"sunlight",new BABYLON.Vector3(-1,-2,1),scene);
+sun.position=new BABYLON.Vector3(30,50,-30);
+sun.intensity=.65;
+
+const types=[
+{name:"Grass",color:"#65a843",hex:0x65a843},
+{name:"Dirt",color:"#87552e",hex:0x87552e},
+{name:"Stone",color:"#858585",hex:0x858585},
+{name:"Wood",color:"#80502d",hex:0x80502d},
+{name:"Leaves",color:"#29843c",hex:0x29843c},
+{name:"Sand",color:"#e5d08a",hex:0xe5d08a},
+{name:"Brick",color:"#ad5140",hex:0xad5140}
+];
+let selected=0,inventory=0;
+const blocks=new Map();
+const key=(x,y,z)=>`${x},${y},${z}`;
+const materials={};
+
+types.forEach((t,i)=>{
+const m=new BABYLON.StandardMaterial("mat"+i,scene);
+m.diffuseColor=BABYLON.Color3.FromHexString(t.color);
+m.specularColor=new BABYLON.Color3(0,0,0);
+materials[i]=m;
+});
+
+const box=BABYLON.MeshBuilder.CreateBox(
+"blockTemplate",{size:1},scene);
+box.isVisible=false;
+box.isPickable=false;
+
+function makeBlock(x,y,z,type){
+const id=key(x,y,z);
+if(blocks.has(id))return;
+const b=box.createInstance("block_"+id);
+b.position.set(x,y,z);
+b.material=materials[type];
+b.isVisible=true;
+b.isPickable=true;
+b.checkCollisions=true;
+b.metadata={x,y,z,type};
+blocks.set(id,b);
+}
+function removeBlock(b){
+if(!b||!b.metadata)return;
+const d=b.metadata;
+blocks.delete(key(d.x,d.y,d.z));
+b.dispose();
+}
+function buildTree(x,z){
+for(let y=1;y<=3;y++)makeBlock(x,y,z,3);
+for(let dx=-2;dx<=2;dx++)
+for(let dz=-2;dz<=2;dz++)
+for(let dy=3;dy<=5;dy++){
+if(Math.abs(dx)+Math.abs(dz)+(dy===5?1:0)<=4)
+makeBlock(x+dx,dy,z+dz,4);
+}
+}
+function generateWorld(){
+for(let x=-16;x<=16;x++){
+for(let z=-16;z<=16;z++){
+let h=Math.floor(
+Math.sin(x*.37)*1.1+Math.cos(z*.29)*1.1);
+for(let y=-3;y<=h;y++){
+let type=y===h?0:(y>=h-2?1:2);
+if(h<0&&y===h)type=5;
+makeBlock(x,y,z,type);
+}
+if(Math.random()<.035&&Math.abs(x)>3&&Math.abs(z)>3)
+buildTree(x,z);
+}
+}
+}
+generateWorld();
+
+function drawHotbar(){
+const bar=document.getElementById("hotbar");
+bar.innerHTML="";
+types.forEach((t,i)=>{
+const el=document.createElement("div");
+el.className="slot"+(i===selected?" active":"");
+el.innerHTML=`<div class="swatch" style="background:${t.color}"></div>${i+1}. ${t.name}`;
+el.onclick=()=>{selected=i;drawHotbar()};
+bar.appendChild(el);
+});
+}
+drawHotbar();
+
+function updateUI(){
+document.getElementById("count").textContent=inventory;
+}
+function message(t){
+document.getElementById("msg").textContent=t;
+}
+document.getElementById("start").onclick=()=>{
+document.getElementById("menu").style.display="none";
+camera.position.y=Math.max(camera.position.y,4);
+canvas.requestPointerLock?.();
+canvas.focus();
+};
+document.addEventListener("pointerlockchange",()=>{
+if(document.pointerLockElement!==canvas){
+document.getElementById("menu").style.display="flex";
+}
+});
+document.addEventListener("keydown",e=>{
+if(e.key>="1"&&e.key<="7"){
+selected=Number(e.key)-1;drawHotbar();
+}
+if(e.code==="Space")e.preventDefault();
+if(e.key.toLowerCase()==="p"){
+document.getElementById("menu").style.display="flex";
+document.exitPointerLock?.();
+}
+});
+canvas.addEventListener("contextmenu",e=>e.preventDefault());
+
+function targetBlock(){
+const ray=camera.getForwardRay(6);
+const hit=scene.pickWithRay(ray,m=>m.isPickable&&!!m.metadata);
+return hit&&hit.hit?hit:null;
+}
+canvas.addEventListener("pointerdown",e=>{
+if(document.pointerLockElement!==canvas)return;
+if(e.button===0){
+const hit=targetBlock();
+if(hit&&hit.pickedMesh){
+const b=hit.pickedMesh;
+if(b.metadata.y<=-3)return;
+removeBlock(b);
+inventory++;
+updateUI();
+}
+}
+if(e.button===2){
+const hit=targetBlock();
+if(hit&&hit.pickedMesh&&inventory>0){
+const b=hit.pickedMesh;
+const normal=hit.getNormal(true);
+if(!normal)return;
+const d=b.metadata;
+const x=d.x+Math.round(normal.x);
+const y=d.y+Math.round(normal.y);
+const z=d.z+Math.round(normal.z);
+const p=camera.position;
+if(Math.abs(x-p.x)<1&&Math.abs(z-p.z)<1&&
+y>p.y-2&&y<p.y+1)return;
+if(!blocks.has(key(x,y,z))){
+makeBlock(x,y,z,selected);
+inventory--;
+updateUI();
+}
+}
+}
+});
+
+function saveWorld(){
+const data={
+blocks:[...blocks.values()].map(b=>({
+x:b.metadata.x,y:b.metadata.y,z:b.metadata.z,t:b.metadata.type
+})),
+player:{x:camera.position.x,y:camera.position.y,z:camera.position.z},
+inventory,selected
+};
+localStorage.setItem("sodaisWorldCraft",JSON.stringify(data));
+message("World saved on this device!");
+}
+function loadWorld(){
+const raw=localStorage.getItem("sodaisWorldCraft");
+if(!raw){message("No saved world found yet.");return;}
+try{
+const data=JSON.parse(raw);
+blocks.forEach(b=>b.dispose());
+blocks.clear();
+data.blocks.forEach(b=>makeBlock(b.x,b.y,b.z,b.t));
+camera.position.set(data.player.x,data.player.y,data.player.z);
+inventory=data.inventory||0;
+selected=data.selected||0;
+drawHotbar();updateUI();
+message("Saved world loaded!");
+}catch(e){message("Could not load this save.");}
+}
+document.getElementById("save").onclick=saveWorld;
+document.getElementById("load").onclick=loadWorld;
+
+scene.onBeforeRenderObservable.add(()=>{
+if(camera.position.y < -15){
+camera.position.set(0,6,-5);
+}
+});
+engine.runRenderLoop(()=>scene.render());
+window.addEventListener("resize",()=>engine.resize());
+updateUI();
+})();
+</script>
+</body>
+</html>
